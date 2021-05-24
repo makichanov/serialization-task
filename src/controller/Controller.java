@@ -1,11 +1,16 @@
 package controller;
 
 import java.io.*;
+import java.lang.reflect.InvocationTargetException;
 import java.net.URL;
 import java.nio.charset.Charset;
 import java.util.LinkedList;
 import java.util.ResourceBundle;
 
+import compression.Compression;
+import filejob.CompressionFileRW;
+import filejob.DefaultFileRW;
+import filejob.FileRW;
 import javafx.beans.value.ChangeListener;
 import javafx.beans.value.ObservableValue;
 import javafx.collections.FXCollections;
@@ -23,11 +28,17 @@ import model.hierarchy.agregation.Weapon;
 import model.hierarchy.cavalry.CavalrySpearman;
 import model.hierarchy.ranged.RangedSorcerer;
 import model.hierarchy.ranged.RangedWarrior;
+import serialization.BinarySerialization;
+import serialization.JSONAdapter;
+import serialization.Serialization;
+import serialization.TextSerialization;
 
 import java.beans.XMLEncoder;
 import java.beans.XMLDecoder;
 
 public class Controller {
+
+    private Serialization serialization;
 
     @FXML
     private ResourceBundle resources;
@@ -138,6 +149,23 @@ public class Controller {
     private Button deserializeButton;
 
     @FXML
+    private CheckBox compressionCheckBox;
+
+    private void changeCompression() {
+        if (compressionCheckBox.isSelected()) {
+            Class<? extends Compression> compressionClass = CompressionFileRW.compressionClasses.get(0);
+            try {
+                FileRW.setFileJob(new CompressionFileRW(compressionClass.getDeclaredConstructor().newInstance()));
+            } catch (InstantiationException | InvocationTargetException |
+                    NoSuchMethodException | IllegalAccessException e) {
+                e.printStackTrace();
+            }
+            System.out.println("compress");
+        }
+        else FileRW.setFileJob(new DefaultFileRW());
+    }
+
+    @FXML
     void handleAdd(ActionEvent event) {
         infoGrid.setVisible(false);
         editGrid.setVisible(true);
@@ -205,48 +233,52 @@ public class Controller {
     }
 
     @FXML
-    void handleSerialize(ActionEvent event) {
+    private void handleSerialize() {
+        String fileName = "";
         switch (serializeMethod.getValue()) {
-            case "Binary":
-                try {
-                    FileOutputStream fos = new FileOutputStream("binary.out");
-                    ObjectOutputStream oos = new ObjectOutputStream(fos);
-                    LinkedList<CavalrySpearman> toSerialize = new LinkedList<>(warriorsList);
-                    oos.writeObject(toSerialize);
-                    oos.flush();
-                    oos.close();
-                    fos.close();
-                } catch (IOException e) {
-                    e.printStackTrace();
-                }
+            case "Binary": {
+                fileName = "output.bin";
+                serialization = BinarySerialization.getInstance();
                 break;
-            case "Object":
-                try {
-                    XMLEncoder e = new XMLEncoder(new BufferedOutputStream(new FileOutputStream("object.xml")));
-                    LinkedList<CavalrySpearman> toSerialize = new LinkedList<>(warriorsList);
-                    e.writeObject(toSerialize);
-                    e.close();
-                } catch (FileNotFoundException fileNotFoundException) {
-                    fileNotFoundException.printStackTrace();
-                }
+            }
+            case "Object" : {
+                fileName = "output.json";
+                serialization = JSONAdapter.getInstance();
                 break;
-
-            case "Text":
-                try {
-                    FileWriter fw = new FileWriter("text");
-                    for (CavalrySpearman warrior : warriorsList) {
-                        fw.write(warrior.toString());
-                    }
-                    fw.close();
-                } catch (IOException e) {
-                    e.printStackTrace();
-                }
+            }
+            case "Text" : {
+                fileName = "output.txt";
+                serialization = TextSerialization.getInstance();
                 break;
+            }
         }
+        serialization.serialize(new File(fileName),
+                new LinkedList<>(warriorsList));
     }
 
     @FXML
-    void handleDeserialize(ActionEvent event) {
+    private void handleDeserialize() {
+        String fileName = "";
+        switch (serializeMethod.getValue()) {
+            case "Binary" :
+                fileName = "output.bin";
+                serialization = BinarySerialization.getInstance();
+                break;
+            case "Object" :
+                fileName = "output.json";
+                serialization = JSONAdapter.getInstance();
+                break;
+            case "Text" :
+                fileName = "output.txt";
+                serialization = TextSerialization.getInstance();
+                break;
+        }
+        warriorsList.addAll(serialization.deserialize(new File(fileName)));
+        list.setItems(warriorsList);
+    }
+
+    @FXML
+    void _handleDeserialize(ActionEvent event) {
         switch (serializeMethod.getValue()) {
             case "Binary":
                 try {
@@ -283,13 +315,12 @@ public class Controller {
     @FXML
     void initialize() {
 
+        FileRW.setFileJob(new DefaultFileRW());
+
         infoGrid.setVisible(false);
         editGrid.setVisible(false);
         confirmAddButton.setVisible(false);
         confirmEditButton.setVisible(false);
-
-        /*warriorsList.add(new CavalrySpearman("Ivan"));
-        warriorsList.add(new CavalrySpearman("Daniil"));*/
 
         list.setItems(warriorsList);
 
@@ -340,6 +371,8 @@ public class Controller {
 
         });
 
+        compressionCheckBox.setOnAction(event -> changeCompression());
+
     }
 
     private void setValues(CavalrySpearman spearman) {
@@ -362,19 +395,6 @@ public class Controller {
             BufferedReader reader = new BufferedReader(new FileReader("text"));
             String line;
             while ((line = reader.readLine()) != null) {
-//                char c;
-//                StringBuilder sizeBuilder = new StringBuilder();
-//                while (Character.isDigit(c = (char) reader.read())) {
-//                    sizeBuilder.append(c);
-//                }
-//                int size = Integer.parseInt(sizeBuilder.toString());
-//                System.out.println(size);
-//                StringBuilder objBuilder = new StringBuilder();
-//                objBuilder.append(c);
-//                for (int i = 0; i < size - 1; i++) {
-//                    objBuilder.append((char) reader.read());
-//                }
-//                System.out.println(objBuilder);
                 warriorsList.add(parseCavalrySpearman(line));
             }
         } catch (IOException e) {
